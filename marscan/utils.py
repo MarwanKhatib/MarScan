@@ -24,9 +24,10 @@ def display_banner():
     # Build tool info panel with Rich markup
     info_text = Text.from_markup(
         "[bold white]A blazing-fast, lightweight Python port scanner.[/bold white]\n\n"
-        "[dim]Author:[/dim] [cyan]MarwanKhatib[/cyan]\n"
+        "[dim]Author:[/dim] [cyan]Marwan ALkhatib[/cyan]\n"
         "[dim]GitHub:[/dim] [link=https://github.com/MarwanKhatib/MarScan]github.com/MarwanKhatib/MarScan[/link]\n"
-        "[dim]LinkedIn:[/dim] [link=https://www.linkedin.com/in/marwan-khatib-b7b7b7b7/]Marwan Khatib[/link]"
+        "[dim]LinkedIn:[/dim] [link=https://www.linkedin.com/in/marwan-alkhatib-426010323/]Marwan Alkhatib[/link]\n"
+        "[dim]X:[/dim] [link=https://x.com/MarwanAl56ib]MarwanAl56ib[/link]"
     )
     info_panel = Panel(
         Align.center(info_text),

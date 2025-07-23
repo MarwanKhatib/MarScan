@@ -97,4 +97,5 @@ This project is licensed under the MIT License. See the `LICENSE` file for detai
 
 - **Author**: MarwanKhatib
 - **GitHub**: [https://github.com/MarwanKhatib/MarScan](https://github.com/MarwanKhatib/MarScan)
-- **LinkedIn**: [https://www.linkedin.com/in/marwan-khatib-b7b7b7b7/](https://www.linkedin.com/in/marwan-khatib-b7b7b7b7/) (Placeholder, please update with your actual LinkedIn profile)
+- **LinkedIn**: [https://www.linkedin.com/in/marwan-alkhatib-426010323/](marwan-alkhatib)
+- **X**: [https://x.com/MarwanAl56ib](MarwanAl56ib)
