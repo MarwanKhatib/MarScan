@@ -6,7 +6,12 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
-        'rich',
+        'markdown-it-py==3.0.0',
+        'mdurl==0.1.2',
+        'pyfiglet==1.0.3',
+        'Pygments==2.19.2',
+        'rich==14.0.0',
+        'termcolor==3.1.0',
     ],
     entry_points={
         'console_scripts': [
