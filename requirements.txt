@@ -1,7 +1,11 @@
+ipaddress==1.0.23
 markdown-it-py==3.0.0
 marscan @ file:///home/dev/projects/cybersecurity/MarScan
 mdurl==0.1.2
+psycopg2-binary==2.9.9
 pyfiglet==1.0.3
 Pygments==2.19.2
+python-nmap==0.7.1
 rich==14.0.0
+scapy==2.6.1
 termcolor==3.1.0

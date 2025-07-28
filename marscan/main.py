@@ -14,6 +14,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.traceback import install
+from rich.table import Table # Import Table for structured output
+import socket # Import socket for service name lookup
 
 # Local imports from the MarScan package
 from marscan.scanner import scan_ports
@@ -127,10 +129,11 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument('host', help="The target host (IP address or domain name) to scan.")
-    parser.add_argument('-p', '--ports', default='1-1024',
+    parser.add_argument('-p', '--ports',
                         help="""Ports to scan. Can be a single port (e.g., '80'),
 a comma-separated list (e.g., '22,80,443'), or a range (e.g., '1-1024').
-Default: '1-1024' (common well-known ports).""")
+Use '-p-' to scan all 65536 ports (0-65535).
+If not specified, scans common well-known ports (1-1024).""")
     parser.add_argument('-t', '--threads', type=int, default=100,
                         help="""Number of concurrent threads to use for scanning.
 A higher number can speed up scans but may consume more CPU/memory.
@@ -153,7 +156,15 @@ Default: 'txt'.""")
 
     display_banner()
 
-    ports_to_scan = parse_port_string(args.ports)
+    if args.ports == '-':
+        ports_to_scan = list(range(0, 65536)) # Scan all ports from 0 to 65535
+        console.print("[bold yellow]Scanning all 65536 ports (0-65535) as requested by '-p-'.[/bold yellow]")
+    elif args.ports:
+        ports_to_scan = parse_port_string(args.ports)
+    else:
+        # Default behavior: scan common well-known ports (1-1024)
+        ports_to_scan = parse_port_string('1-1024')
+        console.print("[bold yellow]No specific ports provided. Scanning common well-known ports (1-1024) by default.[/bold yellow]")
     
     if not ports_to_scan:
         console.print("[bold red]Error:[/bold red] No valid ports to scan after parsing. Exiting.")
@@ -171,15 +182,29 @@ Default: 'txt'.""")
     # Perform the port scan
     open_ports = scan_ports(args.host, ports_to_scan, max_threads=args.threads, timeout=args.timeout)
 
-    # Display scan results
+    # Display scan results in a table format
     if open_ports:
         console.print(Panel(
-            Text.from_markup(
-                f"[bold green]Scan Complete: Open ports found on {args.host}:[/bold green] "
-                f"[bold yellow]{', '.join(map(str, open_ports))}[/bold yellow]"
-            ),
+            Text.from_markup(f"[bold green]Scan Complete: Open ports found on {args.host}[/bold green]"),
             border_style="green"
         ))
+
+        table = Table(title=f"Open Ports on {args.host}", style="bold blue")
+        table.add_column("PORT", justify="right", style="cyan", no_wrap=True)
+        table.add_column("STATE", justify="left", style="green")
+        table.add_column("SERVICE", justify="left", style="magenta")
+        table.add_column("VERSION", justify="left", style="yellow") # Version column, intentionally left empty
+
+        for port in open_ports:
+            service_name = "unknown"
+            try:
+                service_name = socket.getservbyport(port)
+            except OSError:
+                pass # Service not found in common services file
+
+            table.add_row(str(port), "open", service_name, "") # Empty string for version as requested
+        
+        console.print(table)
     else:
         console.print(Panel(
             Text.from_markup(
