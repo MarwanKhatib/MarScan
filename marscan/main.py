@@ -18,7 +18,7 @@ from rich.table import Table # Import Table for structured output
 import socket # Import socket for service name lookup
 
 # Local imports from the MarScan package
-from marscan.scanner import scan_ports
+from marscan.scanner import ConnectScan, SynScan, AckScan, UdpScan, FinScan, XmasScan
 from marscan.utils import display_banner
 
 # Install Rich traceback handler for better error reporting, showing local variables on error
@@ -151,6 +151,11 @@ If not specified, results are only printed to the console.""")
 Choices: 'txt' (plain text), 'json' (JSON format), 'csv' (CSV format).
 This option is only used if '--save-to-file' is specified.
 Default: 'txt'.""")
+    parser.add_argument('-sT', '--scan-type', choices=['connect', 'syn', 'ack', 'udp', 'fin', 'xmas'], default='connect',
+                        help="""Type of scan to perform.
+Choices: 'connect' (TCP Connect), 'syn' (TCP SYN/Half-open),
+'ack' (TCP ACK), 'udp' (UDP Scan), 'fin' (TCP FIN), 'xmas' (TCP Xmas).
+Default: 'connect'.""")
 
     args = parser.parse_args()
 
@@ -170,9 +175,26 @@ Default: 'txt'.""")
         console.print("[bold red]Error:[/bold red] No valid ports to scan after parsing. Exiting.")
         sys.exit(1)
 
+    # Determine scan class based on argument
+    scan_class_map = {
+        'connect': ConnectScan,
+        'syn': SynScan,
+        'ack': AckScan,
+        'udp': UdpScan,
+        'fin': FinScan,
+        'xmas': XmasScan,
+    }
+    
+    ScanClass = scan_class_map.get(args.scan_type)
+    if not ScanClass:
+        console.print(f"[bold red]Error:[/bold red] Invalid scan type '{args.scan_type}'. Exiting.")
+        sys.exit(1)
+
+    scanner = ScanClass(host=args.host, timeout=args.timeout)
+
     # Log scan initiation with detailed parameters
     console.print(
-        f"[bold green]Initiating scan on[/bold green] [cyan]{args.host}[/cyan] "
+        f"[bold green]Initiating {args.scan_type.upper()} scan on[/bold green] [cyan]{args.host}[/cyan] "
         f"for ports: [yellow]{ports_to_scan[0]}-{ports_to_scan[-1]}[/yellow] "
         f"([magenta]{len(ports_to_scan)}[/magenta] ports) "
         f"using [purple]{args.threads}[/purple] concurrent threads "
@@ -180,12 +202,12 @@ Default: 'txt'.""")
     )
 
     # Perform the port scan
-    open_ports = scan_ports(args.host, ports_to_scan, max_threads=args.threads, timeout=args.timeout)
+    open_ports = scanner.scan_ports(ports_to_scan, max_threads=args.threads)
 
     # Display scan results in a table format
     if open_ports:
         console.print(Panel(
-            Text.from_markup(f"[bold green]Scan Complete: Open ports found on {args.host}[/bold green]"),
+            Text.from_markup(f"[bold green]Scan Complete: Open ports found on {args.host} ({args.scan_type.upper()} Scan)[/bold green]"),
             border_style="green"
         ))
 
