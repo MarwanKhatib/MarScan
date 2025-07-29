@@ -2,6 +2,7 @@ import argparse
 import sys
 import time
 import socket
+import os
 
 from rich.console import Console
 from rich.panel import Panel
@@ -151,6 +152,12 @@ def main():
     else:
         scan_type = selected_scans[0]
 
+    # Check for root privileges if required by the scan type
+    if scan_type in ['syn', 'fin', 'null', 'xmas']:
+        if os.geteuid() != 0:
+            console.print("[bold red]Error:[/bold red] This scan type requires root privileges. Please run with 'sudo'.")
+            sys.exit(1)
+
     ScanClass = scan_map[scan_type][1]
 
     decoy_ips_list = [ip.strip() for ip in args.decoy_ips.split(',')] if args.decoy_ips else []
@@ -174,20 +181,23 @@ def main():
 
     # --- Display Scan Configuration ---
     port_range_str = f"{ports_to_scan[0]}-{ports_to_scan[-1]}" if len(ports_to_scan) > 1 else str(ports_to_scan[0])
-    config_text = Text.from_markup(
-        f"[bold]Host:[/bold] [cyan]{args.host}[/cyan]\n"
-        f"[bold]Ports:[/bold] [yellow]{port_range_str}[/yellow] ({len(ports_to_scan)} ports)\n"
-        f"[bold]Scan Type:[/bold] [magenta]{scan_type.upper()} Scan[/magenta]\n"
-        f"[bold]Threads:[/bold] {args.threads}\n"
+    
+    config_lines = [
+        f"[bold]Host:[/bold] [cyan]{args.host}[/cyan]",
+        f"[bold]Ports:[/bold] [yellow]{port_range_str}[/yellow] ({len(ports_to_scan)} ports)",
+        f"[bold]Scan Type:[/bold] [magenta]{scan_type.upper()} Scan[/magenta]",
+        f"[bold]Threads:[/bold] {args.threads}",
         f"[bold]Timeout:[/bold] {args.timeout}s"
-    )
+    ]
     
     if args.profile:
-        config_text.append(f"\n[bold]Profile:[/bold] [yellow]{args.profile}[/yellow]")
+        config_lines.append(f"[bold]Profile:[/bold] [yellow]{args.profile}[/yellow]")
     if decoy_ips_list:
-        config_text.append(f"\n[bold]Decoys:[/bold] {len(decoy_ips_list)} IP(s)")
+        config_lines.append(f"[bold]Decoys:[/bold] {len(decoy_ips_list)} IP(s)")
 
-    console.print(Panel(config_text, title="[bold blue]Scan Configuration[/bold blue]", border_style="blue", expand=False))
+    config_string = "\n".join(config_lines)
+    
+    console.print(Panel(config_string, title="[bold blue]Scan Configuration[/bold blue]", border_style="blue", expand=False))
 
 
     scanner = ScanClass(
