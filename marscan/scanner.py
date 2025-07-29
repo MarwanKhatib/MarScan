@@ -1,14 +1,27 @@
-import socket
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from scapy.all import IP, TCP, UDP, sr1, ICMP, Raw, send, RandShort
+from scapy.all import IP, TCP, send, sr1, RandShort
+import socket
 
 class BaseScan:
     """
     Base class for all scan types.
     """
-    def __init__(self, host: str, timeout: float = 1.0):
+    def __init__(self, host: str, timeout: float = 1.0, decoy_ips: list[str] = None, scan_delay: float = 0.0, verbose: int = 0):
         self.host = host
         self.timeout = timeout
+        self.decoy_ips = decoy_ips if decoy_ips is not None else []
+        self.scan_delay = scan_delay
+        self.verbose = verbose
+
+    def _send_decoy_packets(self, port: int, flags: str):
+        """
+        Sends decoy packets from spoofed IP addresses.
+        """
+        for decoy_ip in self.decoy_ips:
+            # Send a simple packet from the decoy IP
+            decoy_packet = IP(src=decoy_ip, dst=self.host)/TCP(dport=port, sport=RandShort(), flags=flags)
+            send(decoy_packet, verbose=0)
 
     def _scan_single_port(self, port: int) -> bool:
         """
@@ -33,27 +46,18 @@ class BaseScan:
                     pass
         return sorted(open_ports)
 
-class ConnectScan(BaseScan):
-    """
-    Performs a TCP Connect scan.
-    """
-    def _scan_single_port(self, port: int) -> bool:
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(self.timeout)
-                result = sock.connect_ex((self.host, port))
-                return result == 0
-        except (socket.timeout, ConnectionRefusedError, OSError):
-            return False
-        except Exception:
-            return False
-
 class SynScan(BaseScan):
     """
     Performs a TCP SYN (half-open) scan.
     """
     def _scan_single_port(self, port: int) -> bool:
         try:
+            if self.scan_delay > 0:
+                time.sleep(self.scan_delay)
+            # Send decoy packets before the actual scan
+            if self.decoy_ips:
+                self._send_decoy_packets(port, flags="S")
+
             # Craft SYN packet
             # RandShort() for random source port
             # flags="S" for SYN flag
@@ -66,95 +70,59 @@ class SynScan(BaseScan):
                 tcp_layer = resp.getlayer(TCP)
                 # If SYN-ACK received, port is open
                 if tcp_layer.flags == 0x12:  # SYN-ACK
+                    if self.verbose >= 1:
+                        print(f"[*] Port {port}: Open (SYN-ACK received)")
                     # Send RST to close the connection cleanly
                     send(IP(dst=self.host)/TCP(dport=port, sport=resp.sport, flags="R"), verbose=0)
                     return True
                 # If RST-ACK received, port is closed
                 elif tcp_layer.flags == 0x14:  # RST-ACK
+                    if self.verbose >= 1:
+                        print(f"[*] Port {port}: Closed (RST-ACK received)")
                     return False
+                else:
+                    if self.verbose >= 2:
+                        print(f"[*] Port {port}: Received unexpected flags: {hex(tcp_layer.flags)}")
+            else:
+                if self.verbose >= 1:
+                    print(f"[*] Port {port}: Filtered/No response (Timeout or no TCP layer)")
             return False
-        except Exception:
-            return False
-
-class AckScan(BaseScan):
-    """
-    Performs a TCP ACK scan. Used to map firewall rules and determine if a port is filtered.
-    """
-    def _scan_single_port(self, port: int) -> bool:
-        try:
-            packet = IP(dst=self.host)/TCP(dport=port, sport=RandShort(), flags="A")
-            resp = sr1(packet, timeout=self.timeout, verbose=0)
-
-            if resp and resp.haslayer(TCP):
-                if resp.getlayer(TCP).flags == 0x04:  # RST
-                    # If RST received, port is unfiltered
-                    return True
-                # Other responses (e.g., no response) indicate filtered
-            return False
-        except Exception:
+        except Exception as e:
+            if self.verbose >= 2:
+                print(f"[*] Port {port}: Exception during SYN scan: {e}")
             return False
 
-class UdpScan(BaseScan):
+class ConnectScan(BaseScan):
     """
-    Performs a UDP scan.
+    Performs a TCP Connect scan.
     """
     def _scan_single_port(self, port: int) -> bool:
         try:
-            # Send a UDP packet to the target port
-            # For common services, a small payload might elicit a response
-            # For this example, we send an empty UDP packet
-            packet = IP(dst=self.host)/UDP(dport=port)
-            resp = sr1(packet, timeout=self.timeout, verbose=0)
+            if self.scan_delay > 0:
+                time.sleep(self.scan_delay)
+            
+            # Send decoy packets before the actual scan
+            if self.decoy_ips:
+                self._send_decoy_packets(port, flags="S")
 
-            if resp is None:
-                # No response usually means the port is open or filtered
-                # In UDP, no response often means open (no service to reply or firewall drops)
-                # This is an ambiguous state, but we'll treat it as potentially open for now.
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(self.timeout)
+            result = s.connect_ex((self.host, port))
+            s.close()
+            
+            if result == 0:
+                if self.verbose >= 1:
+                    print(f"[*] Port {port}: Open (Connection successful)")
                 return True
-            elif resp.haslayer(ICMP):
-                # ICMP Port Unreachable (type 3, code 3) means port is closed
-                if resp.getlayer(ICMP).type == 3 and resp.getlayer(ICMP).code == 3:
-                    return False
-            return False # Any other response means closed or filtered
-        except Exception:
-            return False
-
-class FinScan(BaseScan):
-    """
-    Performs a TCP FIN scan. Open ports should ignore FIN packets, closed ports should respond with RST.
-    """
-    def _scan_single_port(self, port: int) -> bool:
-        try:
-            packet = IP(dst=self.host)/TCP(dport=port, sport=RandShort(), flags="F")
-            resp = sr1(packet, timeout=self.timeout, verbose=0)
-
-            if resp is None:
-                # No response means port is open (or filtered)
-                return True
-            elif resp.haslayer(TCP) and resp.getlayer(TCP).flags == 0x04:  # RST
-                # RST response means port is closed
+            elif result == 111: # ECONNREFUSED
+                if self.verbose >= 1:
+                    print(f"[*] Port {port}: Closed (Connection refused)")
                 return False
-            return False
-        except Exception:
-            return False
-
-class XmasScan(BaseScan):
-    """
-    Performs a TCP Xmas scan (FIN, PSH, URG flags set).
-    Open ports should ignore, closed ports should respond with RST.
-    """
-    def _scan_single_port(self, port: int) -> bool:
-        try:
-            # Flags "FPU" for FIN, PSH, URG
-            packet = IP(dst=self.host)/TCP(dport=port, sport=RandShort(), flags="FPU")
-            resp = sr1(packet, timeout=self.timeout, verbose=0)
-
-            if resp is None:
-                # No response means port is open (or filtered)
-                return True
-            elif resp.haslayer(TCP) and resp.getlayer(TCP).flags == 0x04:  # RST
-                # RST response means port is closed
+            else:
+                if self.verbose >= 1:
+                    print(f"[*] Port {port}: Filtered/Other error (Error code: {result})")
                 return False
-            return False
-        except Exception:
+        except Exception as e:
+            if self.verbose >= 2:
+                print(f"[*] Port {port}: Exception during Connect scan: {e}")
             return False

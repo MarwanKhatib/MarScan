@@ -1,27 +1,19 @@
-"""
-MarScan - A blazing-fast, lightweight Python port scanner.
-
-This module provides the command-line interface for MarScan, handling argument parsing,
-orchestrating the port scanning process, and managing output display and saving.
-"""
-
 import argparse
 import json
 import csv
 import sys
+import time
+import socket
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.traceback import install
-from rich.table import Table # Import Table for structured output
-import socket # Import socket for service name lookup
+from rich.table import Table
 
-# Local imports from the MarScan package
-from marscan.scanner import ConnectScan, SynScan, AckScan, UdpScan, FinScan, XmasScan
+from marscan.scanner import SynScan, ConnectScan
 from marscan.utils import display_banner
 
-# Install Rich traceback handler for better error reporting, showing local variables on error
 install(show_locals=True)
 console = Console()
 
@@ -47,14 +39,12 @@ def parse_port_string(port_string: str) -> list[int]:
             if '-' in part:
                 start_str, end_str = part.split('-')
                 start, end = int(start_str), int(end_str)
-                # Ensure ports are within valid range and start <= end
                 if 0 <= start <= end <= 65535:
                     ports.update(range(start, end + 1))
                 else:
                     console.print(f"[bold red]Warning:[/bold red] Invalid port range '{part}'. Ports must be between 0 and 65535.")
             else:
                 port = int(part)
-                # Ensure port is within valid range
                 if 0 <= port <= 65535:
                     ports.add(port)
                 else:
@@ -77,7 +67,7 @@ def save_results(host: str, open_ports: list[int], output_file: str, output_form
         "host": host,
         "open_ports": open_ports,
         "total_open_ports": len(open_ports),
-        "timestamp": console.get_datetime().isoformat() # Add timestamp for professionalism
+        "timestamp": console.get_datetime().isoformat()
     }
 
     try:
@@ -151,23 +141,32 @@ If not specified, results are only printed to the console.""")
 Choices: 'txt' (plain text), 'json' (JSON format), 'csv' (CSV format).
 This option is only used if '--save-to-file' is specified.
 Default: 'txt'.""")
-    parser.add_argument('-sT', '--scan-type', choices=['connect', 'syn', 'ack', 'udp', 'fin', 'xmas'], default='connect',
-                        help="""Type of scan to perform.
-Choices: 'connect' (TCP Connect), 'syn' (TCP SYN/Half-open),
-'ack' (TCP ACK), 'udp' (UDP Scan), 'fin' (TCP FIN), 'xmas' (TCP Xmas).
-Default: 'connect'.""")
+    parser.add_argument('--decoy-ips', type=str,
+                        help="""Comma-separated list of decoy IP addresses to use for the scan.
+These IPs will be spoofed to make the scan appear to originate from multiple sources.
+Example: '192.168.1.100,10.0.0.5,172.16.0.20'""")
+    parser.add_argument('--scan-delay', type=float, default=0.0,
+                        help="""Delay in seconds between each port probe.
+Useful for stealth scans to avoid triggering rate-based detection systems.
+Default: 0.0 (no delay).""")
+    parser.add_argument('-sT', '--tcp-connect-scan', action='store_true',
+                        help="Perform a TCP connect scan (default if no other scan type is specified).")
+    parser.add_argument('-sS', '--syn-scan', action='store_true',
+                        help="Perform a SYN stealth scan (requires root privileges).")
+    parser.add_argument('-v', '--verbose', action='count', default=0,
+                        help="""Enable verbose output. Use -v for basic verbose, -vv for more detailed debugging.
+Default: 0 (no verbose output).""")
 
     args = parser.parse_args()
 
     display_banner()
 
     if args.ports == '-':
-        ports_to_scan = list(range(0, 65536)) # Scan all ports from 0 to 65535
+        ports_to_scan = list(range(0, 65536))
         console.print("[bold yellow]Scanning all 65536 ports (0-65535) as requested by '-p-'.[/bold yellow]")
     elif args.ports:
         ports_to_scan = parse_port_string(args.ports)
     else:
-        # Default behavior: scan common well-known ports (1-1024)
         ports_to_scan = parse_port_string('1-1024')
         console.print("[bold yellow]No specific ports provided. Scanning common well-known ports (1-1024) by default.[/bold yellow]")
     
@@ -175,39 +174,53 @@ Default: 'connect'.""")
         console.print("[bold red]Error:[/bold red] No valid ports to scan after parsing. Exiting.")
         sys.exit(1)
 
-    # Determine scan class based on argument
     scan_class_map = {
         'connect': ConnectScan,
         'syn': SynScan,
-        'ack': AckScan,
-        'udp': UdpScan,
-        'fin': FinScan,
-        'xmas': XmasScan,
     }
-    
-    ScanClass = scan_class_map.get(args.scan_type)
+
+    scan_type = 'connect'
+    if args.syn_scan:
+        scan_type = 'syn'
+    elif args.tcp_connect_scan:
+        scan_type = 'connect'
+
+    ScanClass = scan_class_map.get(scan_type)
     if not ScanClass:
-        console.print(f"[bold red]Error:[/bold red] Invalid scan type '{args.scan_type}'. Exiting.")
+        console.print(f"[bold red]Error:[/bold red] Invalid scan type specified: '{scan_type}'. Exiting.")
         sys.exit(1)
 
-    scanner = ScanClass(host=args.host, timeout=args.timeout)
+    console.print(f"[bold green]Selected scan type:[/bold green] [cyan]{scan_type.upper()} Scan[/cyan]")
 
-    # Log scan initiation with detailed parameters
+    decoy_ips_list = []
+    if args.decoy_ips:
+        decoy_ips_list = [ip.strip() for ip in args.decoy_ips.split(',')]
+        console.print(f"[bold yellow]Using decoy IPs:[/bold yellow] [cyan]{', '.join(decoy_ips_list)}[/cyan]")
+
+    scanner = ScanClass(host=args.host, timeout=args.timeout, decoy_ips=decoy_ips_list, scan_delay=args.scan_delay, verbose=args.verbose)
+
     console.print(
-        f"[bold green]Initiating {args.scan_type.upper()} scan on[/bold green] [cyan]{args.host}[/cyan] "
+        f"[bold green]Initiating {scan_type.upper()} scan on[/bold green] [cyan]{args.host}[/cyan] "
         f"for ports: [yellow]{ports_to_scan[0]}-{ports_to_scan[-1]}[/yellow] "
         f"([magenta]{len(ports_to_scan)}[/magenta] ports) "
         f"using [purple]{args.threads}[/purple] concurrent threads "
         f"with a [red]{args.timeout}[/red]s timeout per port."
     )
+    if args.scan_delay > 0:
+        console.print(f"[bold yellow]Scan delay set to[/bold yellow] [red]{args.scan_delay}[/red]s [bold yellow]between probes.[/bold yellow]")
+    if decoy_ips_list:
+        console.print(f"[bold yellow]Decoy IPs enabled:[/bold yellow] [cyan]{', '.join(decoy_ips_list)}[/cyan]")
+    if args.verbose > 0:
+        console.print(f"[bold yellow]Verbose level:[/bold yellow] [cyan]{args.verbose}[/cyan]")
 
-    # Perform the port scan
+    start_time = time.time()
     open_ports = scanner.scan_ports(ports_to_scan, max_threads=args.threads)
+    end_time = time.time()
+    duration = end_time - start_time
 
-    # Display scan results in a table format
     if open_ports:
         console.print(Panel(
-            Text.from_markup(f"[bold green]Scan Complete: Open ports found on {args.host} ({args.scan_type.upper()} Scan)[/bold green]"),
+            Text.from_markup(f"[bold green]Scan Complete: Open ports found on {args.host} ({scan_type.upper()} Scan)[/bold green]"),
             border_style="green"
         ))
 
@@ -215,16 +228,16 @@ Default: 'connect'.""")
         table.add_column("PORT", justify="right", style="cyan", no_wrap=True)
         table.add_column("STATE", justify="left", style="green")
         table.add_column("SERVICE", justify="left", style="magenta")
-        table.add_column("VERSION", justify="left", style="yellow") # Version column, intentionally left empty
+        table.add_column("VERSION", justify="left", style="yellow")
 
         for port in open_ports:
             service_name = "unknown"
             try:
                 service_name = socket.getservbyport(port)
             except OSError:
-                pass # Service not found in common services file
+                pass
 
-            table.add_row(str(port), "open", service_name, "") # Empty string for version as requested
+            table.add_row(str(port), "open", service_name, "")
         
         console.print(table)
     else:
@@ -234,8 +247,9 @@ Default: 'connect'.""")
             ),
             border_style="red"
         ))
+    
+    console.print(f"[bold green]Scan finished in[/bold green] [cyan]{duration:.2f}[/cyan] [bold green]seconds.[/bold green]")
 
-    # Save results if an output file is specified
     if args.output_file:
         save_results(args.host, open_ports, args.output_file, args.format)
 

@@ -1,5 +1,9 @@
 # MarScan
 
+[![PyPI - Version](https://img.shields.io/pypi/v/marscan)](https://pypi.org/project/marscan/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub last commit](https://img.shields.io/github/last-commit/MarwanKhatib/MarScan)](https://github.com/MarwanKhatib/MarScan)
+
 A blazing-fast, lightweight, and highly extensible TCP port scanner built with Python. MarScan is designed for ethical hackers, penetration testers, and network security professionals who require a reliable and efficient tool for identifying open ports on target hosts.
 
 ## Features
@@ -13,11 +17,28 @@ A blazing-fast, lightweight, and highly extensible TCP port scanner built with P
 
 ## Installation
 
-MarScan can be easily installed using `pip`:
+To get started with MarScan, first clone the repository:
+
+```bash
+git clone https://github.com/MarwanKhatib/MarScan.git
+cd MarScan
+```
+
+Then, install the package using `pip`:
 
 ```bash
 pip install .
 ```
+
+## Quick Start
+
+After installation, you can quickly scan a target host for common ports (1-1024) with a single command:
+
+```bash
+marscan example.com
+```
+
+For more advanced usage and options, refer to the "Usage" section below.
 
 ## Usage
 
@@ -47,6 +68,42 @@ marscan <host> [options]
   marscan example.com -p 1-65535
   ```
 
+- **Perform a SYN stealth scan (requires root privileges):**
+
+  ```bash
+  sudo marscan example.com -sS
+  ```
+
+- **Perform a TCP connect scan:**
+
+  ```bash
+  marscan example.com -sT
+  ```
+
+- **Use decoy IP addresses:**
+
+  ```bash
+  marscan example.com --decoy-ips 192.168.1.100,10.0.0.5
+  ```
+
+- **Add a scan delay:**
+
+  ```bash
+  marscan example.com --scan-delay 0.1
+  ```
+
+- **Enable verbose output:**
+
+  ```bash
+  marscan example.com -v
+  ```
+
+- **Enable very verbose (debugging) output:**
+
+  ```bash
+  marscan example.com -vv
+  ```
+
 - **Adjust concurrency and timeout:**
 
   ```bash
@@ -72,19 +129,6 @@ marscan <host> [options]
   marscan example.com -s report.txt -f txt
   ```
 
-## Future Enhancements
-
-MarScan is designed for extensibility. Potential future features include:
-
-- **Service Detection**: Identify the specific service running on open ports (e.g., HTTP, SSH, FTP).
-- **OS Detection**: Attempt to identify the operating system of the target host.
-- **Stealth Scans**: Implement different scan types like SYN scan (half-open scan) for less detectable operations.
-- **Banner Grabbing**: Extract banner information from open ports for more detailed service identification.
-- **IPv6 Support**: Extend scanning capabilities to IPv6 addresses.
-- **Proxy Support**: Add support for scanning through SOCKS5 or HTTP proxies.
-- **Performance Optimization**: Explore asynchronous I/O (`asyncio`) for even faster scans.
-- **Port Status Differentiation**: Distinguish between "closed" and "filtered" ports for more accurate results.
-
 ## Contributing
 
 Contributions are welcome! Please refer to the GitHub repository for guidelines.
@@ -97,5 +141,5 @@ This project is licensed under the MIT License. See the `LICENSE` file for detai
 
 - **Author**: MarwanKhatib
 - **GitHub**: [https://github.com/MarwanKhatib/MarScan](https://github.com/MarwanKhatib/MarScan)
-- **LinkedIn**: [https://www.linkedin.com/in/marwan-alkhatib-426010323/](marwan-alkhatib)
-- **X**: [https://x.com/MarwanAl56ib](MarwanAl56ib)
+- **LinkedIn**: [https://www.linkedin.com/in/marwan-alkhatib-426010323/](https://www.linkedin.com/in/marwan-alkhatib-426010323/)
+- **X**: [https://x.com/MarwanAl56ib](https://x.com/MarwanAl56ib)
