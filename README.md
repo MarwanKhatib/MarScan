@@ -1,144 +1,101 @@
-# MarScan
+# MarScan - Your Custom Red Team Port Scanner
 
 [![PyPI - Version](https://img.shields.io/pypi/v/marscan)](https://pypi.org/project/marscan/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub last commit](https://img.shields.io/github/last-commit/MarwanKhatib/MarScan)](https://github.com/MarwanKhatib/MarScan)
 
-A blazing-fast, lightweight, and highly extensible TCP port scanner built with Python. MarScan is designed for ethical hackers, penetration testers, and network security professionals who require a reliable and efficient tool for identifying open ports on target hosts.
+MarScan is a blazing-fast, lightweight, and highly extensible TCP port scanner built in Python. Originally a simple scanner, it has been evolved into a powerful tool for red teamers and penetration testers who need to **customize their scans to evade detection**.
 
-## Features
+By controlling every aspect of the packets you send, you can avoid the default fingerprints of common tools like Nmap and blend in with normal network traffic.
 
-- **Concurrent Scanning**: Utilizes multithreading to scan multiple ports simultaneously, significantly speeding up the scanning process.
-- **Flexible Port Specification**: Scan single ports, comma-separated lists of ports, or port ranges.
-- **Customizable Performance**: Adjust the number of concurrent threads and connection timeout to optimize scans for different network conditions and resource availability.
-- **Rich Command-Line Interface**: A modern and colorful terminal output powered by the `rich` library, providing clear and professional feedback.
-- **Output Options**: Save scan results to various formats including plain text (`.txt`), JSON (`.json`), and CSV (`.csv`) for easy integration with other tools or reporting.
-- **Modular Design**: Clean and well-documented codebase, making it easy to understand, extend, and integrate new features.
+## Red Team Evasion Features
+
+MarScan's power comes from its deep customization options, allowing you to control the trade-off between speed, stealth, and accuracy.
+
+#### 1. Multiple Scan Techniques
+Choose the right scan for the job. While `-sT` is reliable, stealth scans are better at slipping past firewalls.
+- **TCP Connect Scan (`-sT`)**: Default, reliable, and noisy.
+- **SYN Scan (`-sS`)**: The classic "stealth" scan. Often not logged by older systems.
+- **FIN Scan (`-sF`)**: Can bypass simple, stateless firewalls.
+- **NULL Scan (`-sN`)**: Even stealthier; sends packets with no flags.
+- **XMAS Scan (`-sX`)**: Sets FIN, PSH, URG flags. Another classic firewall evasion technique.
+
+#### 2. Advanced Scan Behavior
+Avoid predictable, robotic scanning patterns that are easily flagged by behavioral analysis.
+- **Randomize Port Order (`--randomize-ports`)**: Scan ports in a shuffled order instead of sequentially.
+- **Scan Jitter (`--scan-jitter`)**: Use a *random* delay between probes instead of a fixed one, making your scan less predictable.
+
+#### 3. Granular Packet Crafting
+This is the core of fingerprint evasion. Modify the headers of your packets to mimic legitimate applications or different operating systems. (Note: These options apply to Scapy-based scans like `-sS`, `-sF`, etc.)
+- **Set TTL (`--ttl`)**: Different OSes use different default Time-To-Live values.
+- **Set TCP Window Size (`--tcp-window`)**: Another key OS fingerprinting indicator.
+- **Set TCP Options (`--tcp-options`)**: Craft the exact TCP options (e.g., `MSS`, `SACK`, `WScale`) to match a specific browser or application.
 
 ## Installation
-
-To get started with MarScan, first clone the repository:
 
 ```bash
 git clone https://github.com/MarwanKhatib/MarScan.git
 cd MarScan
-```
-
-Then, install the package using `pip`:
-
-```bash
 pip install .
 ```
 
-## Quick Start
-
-After installation, you can quickly scan a target host for common ports (1-1024) with a single command:
-
-```bash
-marscan example.com
-```
-
-For more advanced usage and options, refer to the "Usage" section below.
-
 ## Usage
 
-Once installed, you can run MarScan directly from your terminal:
-
+Run MarScan directly from your terminal:
 ```bash
 marscan <host> [options]
 ```
 
-### Examples:
+### Red Team Scenarios & Examples
 
-- **Scan common ports (1-1024) on a target host:**
-
+- **Default, Noisy Scan (Fastest):**
   ```bash
-  marscan example.com
+  marscan example.com -p 1-1024
   ```
 
-- **Scan specific ports:**
-
+- **Standard Stealth Scan (SYN):**
   ```bash
-  marscan example.com -p 22,80,443,8080
+  sudo marscan example.com -p- -sS
   ```
 
-- **Scan a range of ports:**
-
+- **Firewall Evasion Scan (FIN):**
+  This is often effective against simple packet-filtering firewalls.
   ```bash
-  marscan example.com -p 1-65535
+  sudo marscan example.com -p 80,443,8080 -sF
   ```
 
-- **Perform a SYN stealth scan (requires root privileges):**
-
+- **Highly Evasive, Slow Scan:**
+  This example randomizes ports, adds up to 3 seconds of jitter, and sets a custom TTL to mimic a common Windows host.
   ```bash
-  sudo marscan example.com -sS
+  sudo marscan example.com -p 1-1024 -sS --randomize-ports --scan-jitter 3 --ttl 128
   ```
 
-- **Perform a TCP connect scan:**
-
+- **Custom Packet Crafting:**
+  Mimic a specific application by setting the TCP window and options.
   ```bash
-  marscan example.com -sT
+  sudo marscan example.com -p 443 -sS --tcp-window 65535 --tcp-options "MSS=1460,SACK,WScale=8"
   ```
 
-- **Use decoy IP addresses:**
-
+- **Save results to a JSON file with verbose output:**
   ```bash
-  marscan example.com --decoy-ips 192.168.1.100,10.0.0.5
+  marscan example.com -p 80,443 -s scan_results.json -f json -v
   ```
 
-- **Add a scan delay:**
+## Project Architecture
 
-  ```bash
-  marscan example.com --scan-delay 0.1
-  ```
-
-- **Enable verbose output:**
-
-  ```bash
-  marscan example.com -v
-  ```
-
-- **Enable very verbose (debugging) output:**
-
-  ```bash
-  marscan example.com -vv
-  ```
-
-- **Adjust concurrency and timeout:**
-
-  ```bash
-  marscan example.com -t 200 -o 0.5
-  ```
-
-  (Scans with 200 threads and a 0.5-second timeout per connection)
-
-- **Save results to a JSON file:**
-
-  ```bash
-  marscan example.com -p 80,443 -s scan_results.json -f json
-  ```
-
-- **Save results to a CSV file:**
-
-  ```bash
-  marscan example.com -s open_ports.csv -f csv
-  ```
-
-- **Save results to a plain text file:**
-  ```bash
-  marscan example.com -s report.txt -f txt
-  ```
+MarScan's architecture is designed to be modular and extensible.
+- `marscan/main.py`: The main entry point for the CLI.
+- `marscan/scanner/`: Contains the different scan type implementations (`syn.py`, `connect.py`, `fin.py`, etc.).
+- `marscan/utils/`: Contains utility functions for logging, display, and port parsing.
+- `marscan/reporting.py`: Handles saving scan results to different file formats.
 
 ## Contributing
-
-Contributions are welcome! Please refer to the GitHub repository for guidelines.
+Contributions are welcome! Please feel free to open an issue or submit a pull request.
 
 ## License
-
 This project is licensed under the MIT License. See the `LICENSE` file for details.
 
 ## Contact
-
 - **Author**: MarwanKhatib
 - **GitHub**: [https://github.com/MarwanKhatib/MarScan](https://github.com/MarwanKhatib/MarScan)
 - **LinkedIn**: [https://www.linkedin.com/in/marwan-alkhatib-426010323/](https://www.linkedin.com/in/marwan-alkhatib-426010323/)

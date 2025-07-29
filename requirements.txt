@@ -1,11 +1,17 @@
+iniconfig==2.1.0
 ipaddress==1.0.23
 markdown-it-py==3.0.0
-marscan @ file:///home/dev/projects/cybersecurity/MarScan
+-e git+https://github.com/MarwanKhatib/MarScan.git@5e8f4a6d014462fe7b987002c3f252e15df2e418#egg=marscan
 mdurl==0.1.2
+packaging==25.0
+pluggy==1.6.0
 psycopg2-binary==2.9.9
 pyfiglet==1.0.3
 Pygments==2.19.2
+pytest==8.4.1
 python-nmap==0.7.1
 rich==14.0.0
+rich-argparse==1.7.1
 scapy==2.6.1
 termcolor==3.1.0
+tqdm==4.67.1
