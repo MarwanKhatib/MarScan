@@ -15,6 +15,7 @@ setup(
     include_package_data=True,
     install_requires=[
         'rich>=13.0.0',
+        'rich-argparse>=1.0.0',
         'scapy>=2.4.5',
         'pyfiglet>=0.8.post1',
         'markdown-it-py>=2.1.0',

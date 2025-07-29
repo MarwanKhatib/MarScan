@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.traceback import install
+from rich_argparse import RichHelpFormatter
 from rich.table import Table
 
 from marscan.scanner import (
@@ -16,8 +17,24 @@ from marscan.scanner import (
 from marscan.utils import display_banner, get_logger, parse_port_string
 from marscan.reporting import save_results
 
+from rich_argparse import RichHelpFormatter
+
 install(show_locals=True)
 console = Console()
+
+class CustomHelpFormatter(RichHelpFormatter):
+    """Custom help formatter for a more professional and organized look."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.styles["argparse.groups"] = "bold cyan"
+        self.styles["argparse.help"] = "default"
+        self.styles["argparse.args"] = "bold"
+        self.highlights.append(r"(?P<syntax>'(?:[^']|\')*')")
+
+    def add_usage(self, usage, actions, groups, prefix=None):
+        if prefix is None:
+            prefix = '' # Remove the 'usage: ' prefix
+        super().add_usage(usage, actions, groups, prefix)
 
 def main():
     """
@@ -25,7 +42,7 @@ def main():
     """
     parser = argparse.ArgumentParser(
         description="MarScan - A blazing-fast, lightweight Python port scanner.",
-        formatter_class=argparse.HelpFormatter,
+        formatter_class=CustomHelpFormatter,
         conflict_handler='resolve' # Allow overriding default --help
     )
     
