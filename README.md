@@ -31,6 +31,13 @@ This is the core of fingerprint evasion. Modify the headers of your packets to m
 - **Set TCP Window Size (`--tcp-window`)**: Another key OS fingerprinting indicator.
 - **Set TCP Options (`--tcp-options`)**: Craft the exact TCP options (e.g., `MSS`, `SACK`, `WScale`) to match a specific browser or application.
 
+#### 4. Evasion Profiles (`--profile`)
+To make evasion easier, MarScan includes preset profiles that bundle common packet crafting settings. Instead of setting the TTL, window size, and options manually, you can use a single profile.
+
+- **`win10`**: Mimics the network fingerprint of a standard Windows 10 machine.
+- **`linux`**: Mimics a common Linux kernel fingerprint.
+- **`stealth`**: A generic stealth profile that uses jitter and random port ordering to be less predictable.
+
 ## Installation
 
 ```bash
@@ -76,16 +83,25 @@ marscan <host> [options]
   sudo marscan example.com -p 443 -sS --tcp-window 65535 --tcp-options "MSS=1460,SACK,WScale=8"
   ```
 
+- **Evasion using a Profile:**
+  This is the easiest way to mimic a common OS. This example uses the Windows 10 profile.
+  ```bash
+  sudo marscan example.com -p 1-1024 -sS --profile win10
+  ```
+
 - **Save results to a JSON file with verbose output:**
   ```bash
-  marscan example.com -p 80,443 -s scan_results.json -f json -v
+  marscan example.com -p 80,443 -o scan_results.json -f json -v
   ```
 
 ## Project Architecture
 
 MarScan's architecture is designed to be modular and extensible.
 - `marscan/main.py`: The main entry point for the CLI.
-- `marscan/scanner/`: Contains the different scan type implementations (`syn.py`, `connect.py`, `fin.py`, etc.).
+- `marscan/scanner/`: Contains the different scan type implementations.
+  - `base.py`: The base class for all scanners.
+  - `stealth.py`: A common base class for stealthy scans (FIN, NULL, XMAS).
+  - `connect.py`, `syn.py`, `fin.py`, etc.: The specific scanner implementations.
 - `marscan/utils/`: Contains utility functions for logging, display, and port parsing.
 - `marscan/reporting.py`: Handles saving scan results to different file formats.
 

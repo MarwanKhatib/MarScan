@@ -4,20 +4,20 @@ from rich.console import Console
 
 console = Console()
 
-def save_results(host: str, open_ports: list[int], output_file: str, output_format: str):
+def save_results(host: str, port_results: dict[int, str], output_file: str, output_format: str):
     """
     Saves the port scan results to a specified file in the given format.
 
     Args:
         host (str): The target host that was scanned.
-        open_ports (list[int]): A list of open port numbers found.
+        port_results (dict[int, str]): A dictionary mapping port numbers to their state.
         output_file (str): The path to the output file.
         output_format (str): The desired output format ('txt', 'json', 'csv').
     """
     results_data = {
         "host": host,
-        "open_ports": open_ports,
-        "total_open_ports": len(open_ports),
+        "ports": port_results,
+        "total_ports_found": len(port_results),
         "timestamp": console.get_datetime().isoformat()
     }
 
@@ -29,25 +29,22 @@ def save_results(host: str, open_ports: list[int], output_file: str, output_form
         elif output_format == 'csv':
             with open(output_file, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(['Host', 'Open Ports', 'Total Open Ports', 'Timestamp'])
-                writer.writerow([
-                    results_data['host'],
-                    ', '.join(map(str, results_data['open_ports'])),
-                    results_data['total_open_ports'],
-                    results_data['timestamp']
-                ])
+                writer.writerow(['Port', 'State'])
+                for port, state in port_results.items():
+                    writer.writerow([port, state])
             console.print(f"[bold green]Results successfully saved to[/bold green] [cyan]{output_file}[/cyan] [bold green]in CSV format.[/bold green]")
         elif output_format == 'txt':
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(f"--- MarScan Port Scan Results ---\n")
                 f.write(f"Target Host: {results_data['host']}\n")
                 f.write(f"Scan Time: {results_data['timestamp']}\n")
-                f.write(f"Total Open Ports Found: {results_data['total_open_ports']}\n")
+                f.write(f"Total Ports Found: {results_data['total_ports_found']}\n")
                 f.write("-" * 35 + "\n")
-                if results_data['open_ports']:
-                    f.write(f"Open Ports: {', '.join(map(str, results_data['open_ports']))}\n")
+                if results_data['ports']:
+                    for port, state in port_results.items():
+                        f.write(f"Port {port}: {state}\n")
                 else:
-                    f.write("No open ports found in the specified range.\n")
+                    f.write("No open or filtered ports found in the specified range.\n")
                 f.write("---------------------------------\n")
             console.print(f"[bold green]Results successfully saved to[/bold green] [cyan]{output_file}[/cyan] [bold green]in TXT format.[/bold green]")
         else:

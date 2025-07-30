@@ -1,4 +1,5 @@
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scapy.all import IP, TCP, send, sr1, RandShort
 import socket
@@ -32,6 +33,7 @@ class BaseScan:
         self.ttl = ttl
         self.tcp_window = tcp_window
         self.tcp_options = tcp_options if tcp_options is not None else []
+        self.lock = threading.Lock()
 
     def _send_decoy_packets(self, port: int, flags: str):
         """
@@ -46,7 +48,7 @@ class BaseScan:
             decoy_packet = IP(src=decoy_ip, dst=self.host)/TCP(dport=port, sport=RandShort(), flags=flags)
             send(decoy_packet, verbose=0)
 
-    def _scan_single_port(self, port: int) -> bool:
+    def _scan_single_port(self, port: int) -> str | None:
         """
         An abstract method for scanning a single port.
 
@@ -57,11 +59,12 @@ class BaseScan:
             port (int): The port to scan.
 
         Returns:
-            bool: True if the port is open, False otherwise.
+            str | None: The status of the port ('open', 'closed', 'filtered', 'open|filtered')
+                        or None if the scan fails unexpectedly.
         """
         raise NotImplementedError
 
-    def scan_ports(self, ports: list[int], max_threads: int = 100) -> list[int]:
+    def scan_ports(self, ports: list[int], max_threads: int = 100) -> dict[int, str]:
         """
         Scans a list of ports on the target host concurrently.
 
@@ -72,9 +75,9 @@ class BaseScan:
             max_threads (int): The maximum number of threads to use for scanning.
 
         Returns:
-            list[int]: A sorted list of open port numbers.
+            dict[int, str]: A dictionary mapping port numbers to their state.
         """
-        open_ports = []
+        port_states = {}
         
         progress_columns = [
             SpinnerColumn(),
@@ -95,12 +98,14 @@ class BaseScan:
                 for future in as_completed(futures):
                     port = futures[future]
                     try:
-                        if future.result():
-                            self.logger.info(f"Port [bold green]{port}[/bold green] is open.")
-                            open_ports.append(port)
+                        state = future.result()
+                        if state and state != 'closed':
+                            self.logger.info(f"Port [bold green]{port}[/bold green] is {state}.")
+                            with self.lock:
+                                port_states[port] = state
                     except Exception as e:
                         self.logger.debug(f"Error scanning port {port}: {e}")
                     finally:
                         progress.update(scan_task, advance=1)
 
-        return sorted(open_ports)
+        return dict(sorted(port_states.items()))

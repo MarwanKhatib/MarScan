@@ -12,7 +12,7 @@ class SynScan(BaseScan):
     closed port. This method is stealthier than a connect scan as it
     doesn't complete the TCP handshake.
     """
-    def _scan_single_port(self, port: int) -> bool:
+    def _scan_single_port(self, port: int) -> str | None:
         """
         Scans a single port using the TCP SYN scan technique.
 
@@ -20,7 +20,7 @@ class SynScan(BaseScan):
             port (int): The port to scan.
 
         Returns:
-            bool: True if the port is open, False otherwise.
+            str | None: The status of the port ('open', 'closed', 'filtered') or None on error.
         """
         try:
             if self.scan_jitter > 0:
@@ -46,20 +46,22 @@ class SynScan(BaseScan):
             packet = ip_layer/tcp_layer_base
             resp = sr1(packet, timeout=self.timeout, verbose=0)
 
-            if resp and resp.haslayer(TCP):
+            if resp is None:
+                return 'filtered'
+            
+            if resp.haslayer(TCP):
                 tcp_resp_layer = resp.getlayer(TCP)
                 if tcp_resp_layer.flags == 0x12:  # SYN-ACK
-                    self.logger.info(f"[*] Port {port}: Open (SYN-ACK received)")
+                    # Send RST to tear down the connection
                     send(IP(dst=self.host)/TCP(dport=port, sport=resp.sport, flags="R"), verbose=0)
-                    return True
+                    return 'open'
                 elif tcp_resp_layer.flags == 0x14:  # RST-ACK
-                    self.logger.info(f"[*] Port {port}: Closed (RST-ACK received)")
-                    return False
+                    return 'closed'
                 else:
                     self.logger.debug(f"[*] Port {port}: Received unexpected flags: {hex(tcp_resp_layer.flags)}")
+                    return 'filtered'
             else:
-                self.logger.info(f"[*] Port {port}: Filtered/No response")
-            return False
+                return 'filtered'
         except Exception as e:
             self.logger.debug(f"[*] Port {port}: Exception during SYN scan: {e}")
-            return False
+            return None

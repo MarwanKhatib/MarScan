@@ -53,8 +53,8 @@ def main():
                         help="Ports to scan (e.g., '80', '22,80,443', '1-1024', '-p-'). Defaults to 1-1024.")
     core_group.add_argument('-t', '--threads', type=int, default=100,
                         help="Number of concurrent threads. Default: 100.")
-    core_group.add_argument('-o', '--timeout', type=float, default=1.0,
-                        help="Connection timeout in seconds. Default: 1.0.")
+    core_group.add_argument('-o', '--timeout', type=float, default=2.5,
+                        help="Connection timeout in seconds. Default: 2.5.")
     core_group.add_argument('-v', '--verbose', action='count', default=0,
                         help="Enable verbose output (-v for info, -vv for debug).")
 
@@ -230,22 +230,33 @@ def main():
     )
 
     start_time = time.time()
-    open_ports = scanner.scan_ports(ports_to_scan, max_threads=args.threads)
+    port_results = scanner.scan_ports(ports_to_scan, max_threads=args.threads)
     duration = time.time() - start_time
 
-    if open_ports:
+    if port_results:
         table = Table(title=f"Open Ports on {args.host}", style="bold blue", show_header=True, header_style="bold magenta")
         table.add_column("PORT", justify="right", style="cyan", no_wrap=True)
         table.add_column("STATE", justify="left", style="green")
         table.add_column("SERVICE", justify="left", style="yellow")
 
-        for port in open_ports:
+        for port, state in port_results.items():
             service_name = "unknown"
             try:
                 service_name = socket.getservbyport(port)
             except (OSError, socket.error):
                 pass
-            table.add_row(str(port), "open", service_name)
+            
+            # Color-code the state for better readability
+            if state == 'open':
+                state_color = "bold green"
+            elif state == 'filtered':
+                state_color = "bold yellow"
+            elif state == 'open|filtered':
+                state_color = "bold orange3"
+            else:
+                state_color = "default"
+
+            table.add_row(str(port), f"[{state_color}]{state}[/{state_color}]", service_name)
         
         console.print(table)
     else:
@@ -257,7 +268,7 @@ def main():
     console.print(f"[bold green]Scan finished in[/bold green] [cyan]{duration:.2f}[/cyan] [bold green]seconds.[/bold green]")
 
     if args.output_file:
-        save_results(args.host, open_ports, args.output_file, args.format)
+        save_results(args.host, port_results, args.output_file, args.format)
 
 if __name__ == '__main__':
     main()
