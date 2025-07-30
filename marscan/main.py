@@ -1,196 +1,274 @@
-"""
-MarScan - A blazing-fast, lightweight Python port scanner.
-
-This module provides the command-line interface for MarScan, handling argument parsing,
-orchestrating the port scanning process, and managing output display and saving.
-"""
-
 import argparse
-import json
-import csv
 import sys
+import time
+import socket
+import os
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.traceback import install
+from rich_argparse import RichHelpFormatter
+from rich.table import Table
 
-# Local imports from the MarScan package
-from marscan.scanner import scan_ports
-from marscan.utils import display_banner
+from marscan.scanner import (
+    SynScan, ConnectScan, FinScan, NullScan, XmasScan
+)
+from marscan.utils import display_banner, get_logger, parse_port_string
+from marscan.reporting import save_results
 
-# Install Rich traceback handler for better error reporting, showing local variables on error
+from rich_argparse import RichHelpFormatter
+
 install(show_locals=True)
 console = Console()
 
-def parse_port_string(port_string: str) -> list[int]:
-    """
-    Parses a string of ports into a sorted list of unique integers.
+class CustomHelpFormatter(RichHelpFormatter):
+    """Custom help formatter for a more professional and organized look."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.styles["argparse.groups"] = "bold cyan"
+        self.styles["argparse.help"] = "default"
+        self.styles["argparse.args"] = "bold"
+        self.highlights.append(r"(?P<syntax>'(?:[^']|\')*')")
 
-    The string can contain single ports (e.g., '80'), comma-separated lists
-    (e.g., '22,80,443'), or ranges (e.g., '1-1024').
-    Invalid port numbers (e.g., non-integers, out of range 0-65535) are ignored.
-
-    Args:
-        port_string (str): The string representation of ports.
-
-    Returns:
-        list[int]: A sorted list of unique and valid port numbers.
-    """
-    ports = set()
-    parts = port_string.split(',')
-
-    for part in parts:
-        try:
-            if '-' in part:
-                start_str, end_str = part.split('-')
-                start, end = int(start_str), int(end_str)
-                # Ensure ports are within valid range and start <= end
-                if 0 <= start <= end <= 65535:
-                    ports.update(range(start, end + 1))
-                else:
-                    console.print(f"[bold red]Warning:[/bold red] Invalid port range '{part}'. Ports must be between 0 and 65535.")
-            else:
-                port = int(part)
-                # Ensure port is within valid range
-                if 0 <= port <= 65535:
-                    ports.add(port)
-                else:
-                    console.print(f"[bold red]Warning:[/bold red] Invalid port '{part}'. Port must be between 0 and 65535.")
-        except ValueError:
-            console.print(f"[bold red]Warning:[/bold red] Skipping invalid port format: '{part}'.")
-    return sorted(list(ports))
-
-def save_results(host: str, open_ports: list[int], output_file: str, output_format: str):
-    """
-    Saves the port scan results to a specified file in the given format.
-
-    Args:
-        host (str): The target host that was scanned.
-        open_ports (list[int]): A list of open port numbers found.
-        output_file (str): The path to the output file.
-        output_format (str): The desired output format ('txt', 'json', 'csv').
-    """
-    results_data = {
-        "host": host,
-        "open_ports": open_ports,
-        "total_open_ports": len(open_ports),
-        "timestamp": console.get_datetime().isoformat() # Add timestamp for professionalism
-    }
-
-    try:
-        if output_format == 'json':
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(results_data, f, indent=4)
-            console.print(f"[bold green]Results successfully saved to[/bold green] [cyan]{output_file}[/cyan] [bold green]in JSON format.[/bold green]")
-        elif output_format == 'csv':
-            with open(output_file, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow(['Host', 'Open Ports', 'Total Open Ports', 'Timestamp'])
-                writer.writerow([
-                    results_data['host'],
-                    ', '.join(map(str, results_data['open_ports'])),
-                    results_data['total_open_ports'],
-                    results_data['timestamp']
-                ])
-            console.print(f"[bold green]Results successfully saved to[/bold green] [cyan]{output_file}[/cyan] [bold green]in CSV format.[/bold green]")
-        elif output_format == 'txt':
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(f"--- MarScan Port Scan Results ---\n")
-                f.write(f"Target Host: {results_data['host']}\n")
-                f.write(f"Scan Time: {results_data['timestamp']}\n")
-                f.write(f"Total Open Ports Found: {results_data['total_open_ports']}\n")
-                f.write("-" * 35 + "\n")
-                if results_data['open_ports']:
-                    f.write(f"Open Ports: {', '.join(map(str, results_data['open_ports']))}\n")
-                else:
-                    f.write("No open ports found in the specified range.\n")
-                f.write("---------------------------------\n")
-            console.print(f"[bold green]Results successfully saved to[/bold green] [cyan]{output_file}[/cyan] [bold green]in TXT format.[/bold green]")
-        else:
-            console.print(f"[bold red]Error:[/bold red] Unsupported output format specified: '{output_format}'.")
-    except IOError as e:
-        console.print(f"[bold red]Error:[/bold red] Could not write to file '{output_file}': {e}")
-    except Exception as e:
-        console.print(f"[bold red]An unexpected error occurred while saving results:[/bold red] {e}")
+    def add_usage(self, usage, actions, groups, prefix=None):
+        if prefix is None:
+            prefix = '' # Remove the 'usage: ' prefix
+        super().add_usage(usage, actions, groups, prefix)
 
 def main():
     """
     Main entry point for the MarScan command-line application.
-
-    Parses command-line arguments, displays a professional banner,
-    initiates the port scanning process, and presents the results
-    to the user, with an option to save them to a file.
     """
     parser = argparse.ArgumentParser(
-        description="MarScan - A blazing-fast, lightweight Python port scanner for ethical hackers and red teamers.",
-        formatter_class=argparse.RawTextHelpFormatter
+        description="MarScan - A blazing-fast, lightweight Python port scanner.",
+        formatter_class=CustomHelpFormatter,
+        conflict_handler='resolve' # Allow overriding default --help
     )
-    parser.add_argument('host', help="The target host (IP address or domain name) to scan.")
-    parser.add_argument('-p', '--ports', default='1-1024',
-                        help="""Ports to scan. Can be a single port (e.g., '80'),
-a comma-separated list (e.g., '22,80,443'), or a range (e.g., '1-1024').
-Default: '1-1024' (common well-known ports).""")
-    parser.add_argument('-t', '--threads', type=int, default=100,
-                        help="""Number of concurrent threads to use for scanning.
-A higher number can speed up scans but may consume more CPU/memory.
-Adjust based on your system's capabilities and network conditions.
-Default: 100.""")
-    parser.add_argument('-o', '--timeout', type=float, default=1.0,
-                        help="""Connection timeout in seconds for each port attempt.
-Lower values make scans faster but might miss ports on slow networks.
-Default: 1.0.""")
-    parser.add_argument('-s', '--save-to-file', dest='output_file',
-                        help="""Path to a file where scan results will be saved.
-If not specified, results are only printed to the console.""")
-    parser.add_argument('-f', '--format', choices=['txt', 'json', 'csv'], default='txt',
-                        help="""Output format for saving results.
-Choices: 'txt' (plain text), 'json' (JSON format), 'csv' (CSV format).
-This option is only used if '--save-to-file' is specified.
-Default: 'txt'.""")
+    
+    # Core arguments
+    core_group = parser.add_argument_group('Core Options')
+    core_group.add_argument('host', help="The target host to scan.")
+    core_group.add_argument('-p', '--ports',
+                        help="Ports to scan (e.g., '80', '22,80,443', '1-1024', '-p-'). Defaults to 1-1024.")
+    core_group.add_argument('-t', '--threads', type=int, default=100,
+                        help="Number of concurrent threads. Default: 100.")
+    core_group.add_argument('-o', '--timeout', type=float, default=2.5,
+                        help="Connection timeout in seconds. Default: 2.5.")
+    core_group.add_argument('-v', '--verbose', action='count', default=0,
+                        help="Enable verbose output (-v for info, -vv for debug).")
+
+    # Scan type arguments
+    scan_group = parser.add_argument_group('Scan Techniques')
+    scan_group.add_argument('-sT', '--tcp-connect-scan', action='store_true',
+                        help="Perform a TCP connect scan (default).")
+    scan_group.add_argument('-sS', '--syn-scan', action='store_true',
+                        help="Perform a SYN stealth scan (requires root privileges).")
+    scan_group.add_argument('-sF', '--fin-scan', action='store_true',
+                        help="Perform a FIN scan (stealthy, may bypass firewalls).")
+    scan_group.add_argument('-sN', '--null-scan', action='store_true',
+                        help="Perform a NULL scan (stealthy, may bypass firewalls).")
+    scan_group.add_argument('-sX', '--xmas-scan', action='store_true',
+                        help="Perform an XMAS scan (stealthy, may bypass firewalls).")
+
+    # Reporting arguments
+    reporting_group = parser.add_argument_group('Reporting')
+    reporting_group.add_argument('-s', '--save-to-file', dest='output_file',
+                        help="Path to save scan results.")
+    reporting_group.add_argument('-f', '--format', choices=['txt', 'json', 'csv'], default='txt',
+                        help="Output format for saving results. Default: 'txt'.")
+
+    # Evasion arguments
+    evasion_group = parser.add_argument_group('Evasion Techniques')
+    evasion_group.add_argument('--profile', choices=['win10', 'linux', 'stealth'],
+                        help="Use a preset evasion profile. Overridden by specific options.")
+    evasion_group.add_argument('--decoy-ips', type=str,
+                        help="Comma-separated list of decoy IP addresses.")
+    evasion_group.add_argument('--scan-delay', type=float,
+                        help="Add a fixed delay in seconds between probes.")
+    evasion_group.add_argument('--scan-jitter', type=float,
+                        help="Add a random delay (up to N seconds) between probes. Overrides --scan-delay.")
+    evasion_group.add_argument('--randomize-ports', action='store_true',
+                        help="Scan ports in a random order instead of sequentially.")
+    
+    packet_group = parser.add_argument_group('Packet Crafting (for Scapy-based scans)')
+    packet_group.add_argument('--ttl', type=int, help="Set a custom TTL for outgoing packets.")
+    packet_group.add_argument('--tcp-window', type=int, help="Set a custom TCP window size.")
+    packet_group.add_argument('--tcp-options', type=str, help="Set custom TCP options. E.g., 'MSS=1460,SACK,WScale=10'")
+
 
     args = parser.parse_args()
 
     display_banner()
 
-    ports_to_scan = parse_port_string(args.ports)
+    # --- Profile Application ---
+    profiles = {
+        'win10': {
+            'ttl': 128,
+            'tcp_window': 65535,
+            'tcp_options': 'MSS=1460,SACK,WScale=8',
+        },
+        'linux': {
+            'ttl': 64,
+            'tcp_window': 5840,
+            'tcp_options': 'MSS=1460,SACK,WScale=7',
+        },
+        'stealth': {
+            'scan_jitter': 2.5,
+            'randomize_ports': True,
+            'ttl': 64
+        }
+    }
+
+    if args.profile:
+        profile_settings = profiles[args.profile]
+        for key, value in profile_settings.items():
+            # Only set the profile value if the user hasn't provided an explicit argument
+            if getattr(args, key) is None or getattr(args, key) is False or getattr(args, key) == 0.0:
+                setattr(args, key, value)
+    
+    logger = get_logger(args.verbose)
+
+    if args.ports == '-':
+        ports_to_scan = list(range(0, 65536))
+        logger.info("Scanning all 65536 ports (0-65535).")
+    elif args.ports:
+        ports_to_scan = parse_port_string(args.ports)
+    else:
+        ports_to_scan = parse_port_string('1-1024')
+        logger.info("No ports specified. Scanning common ports (1-1024) by default.")
     
     if not ports_to_scan:
-        console.print("[bold red]Error:[/bold red] No valid ports to scan after parsing. Exiting.")
+        console.print("[bold red]Error:[/bold red] No valid ports to scan. Exiting.")
         sys.exit(1)
 
-    # Log scan initiation with detailed parameters
-    console.print(
-        f"[bold green]Initiating scan on[/bold green] [cyan]{args.host}[/cyan] "
-        f"for ports: [yellow]{ports_to_scan[0]}-{ports_to_scan[-1]}[/yellow] "
-        f"([magenta]{len(ports_to_scan)}[/magenta] ports) "
-        f"using [purple]{args.threads}[/purple] concurrent threads "
-        f"with a [red]{args.timeout}[/red]s timeout per port."
+    if args.randomize_ports:
+        import random
+        # Check if it was already shuffled by a profile
+        if not (args.profile and 'randomize_ports' in profiles[args.profile]):
+             random.shuffle(ports_to_scan)
+        logger.info("Port scan order has been randomized.")
+
+    # Determine scan type
+    scan_map = {
+        'syn': ('syn_scan', SynScan),
+        'connect': ('tcp_connect_scan', ConnectScan),
+        'fin': ('fin_scan', FinScan),
+        'null': ('null_scan', NullScan),
+        'xmas': ('xmas_scan', XmasScan),
+    }
+    
+    selected_scans = [name for name, (attr, _) in scan_map.items() if getattr(args, attr)]
+    
+    if len(selected_scans) > 1:
+        console.print(f"[bold red]Error:[/bold red] Multiple scan types specified ({', '.join(selected_scans)}). Please choose only one.")
+        sys.exit(1)
+    
+    if not selected_scans:
+        scan_type = 'connect' # Default scan
+    else:
+        scan_type = selected_scans[0]
+
+    # Check for root privileges if required by the scan type
+    if scan_type in ['syn', 'fin', 'null', 'xmas']:
+        if os.geteuid() != 0:
+            console.print("[bold red]Error:[/bold red] This scan type requires root privileges. Please run with 'sudo'.")
+            sys.exit(1)
+
+    ScanClass = scan_map[scan_type][1]
+
+    decoy_ips_list = [ip.strip() for ip in args.decoy_ips.split(',')] if args.decoy_ips else []
+
+    # Parse TCP options string into a list of tuples
+    tcp_options_list = []
+    if args.tcp_options:
+        if isinstance(args.tcp_options, str):
+            try:
+                for opt in args.tcp_options.split(','):
+                    if '=' in opt:
+                        key, value = opt.split('=', 1)
+                        tcp_options_list.append((key, int(value)))
+                    else:
+                        tcp_options_list.append((opt, ''))
+            except ValueError:
+                console.print(f"[bold red]Error:[/bold red] Invalid TCP options format. Use 'Key=Value,Key' format. Exiting.")
+                sys.exit(1)
+        elif isinstance(args.tcp_options, list):
+            tcp_options_list = args.tcp_options
+
+    # --- Display Scan Configuration ---
+    port_range_str = f"{ports_to_scan[0]}-{ports_to_scan[-1]}" if len(ports_to_scan) > 1 else str(ports_to_scan[0])
+    
+    config_lines = [
+        f"[bold]Host:[/bold] [cyan]{args.host}[/cyan]",
+        f"[bold]Ports:[/bold] [yellow]{port_range_str}[/yellow] ({len(ports_to_scan)} ports)",
+        f"[bold]Scan Type:[/bold] [magenta]{scan_type.upper()} Scan[/magenta]",
+        f"[bold]Threads:[/bold] {args.threads}",
+        f"[bold]Timeout:[/bold] {args.timeout}s"
+    ]
+    
+    if args.profile:
+        config_lines.append(f"[bold]Profile:[/bold] [yellow]{args.profile}[/yellow]")
+    if decoy_ips_list:
+        config_lines.append(f"[bold]Decoys:[/bold] {len(decoy_ips_list)} IP(s)")
+
+    config_string = "\n".join(config_lines)
+    
+    console.print(Panel(config_string, title="[bold blue]Scan Configuration[/bold blue]", border_style="blue", expand=False))
+
+
+    scanner = ScanClass(
+        host=args.host, 
+        timeout=args.timeout, 
+        decoy_ips=decoy_ips_list, 
+        scan_delay=args.scan_delay if args.scan_delay is not None else 0.0,
+        scan_jitter=args.scan_jitter if args.scan_jitter is not None else 0.0,
+        verbose=args.verbose,
+        ttl=args.ttl,
+        tcp_window=args.tcp_window,
+        tcp_options=tcp_options_list
     )
 
-    # Perform the port scan
-    open_ports = scan_ports(args.host, ports_to_scan, max_threads=args.threads, timeout=args.timeout)
+    start_time = time.time()
+    port_results = scanner.scan_ports(ports_to_scan, max_threads=args.threads)
+    duration = time.time() - start_time
 
-    # Display scan results
-    if open_ports:
-        console.print(Panel(
-            Text.from_markup(
-                f"[bold green]Scan Complete: Open ports found on {args.host}:[/bold green] "
-                f"[bold yellow]{', '.join(map(str, open_ports))}[/bold yellow]"
-            ),
-            border_style="green"
-        ))
+    if port_results:
+        table = Table(title=f"Open Ports on {args.host}", style="bold blue", show_header=True, header_style="bold magenta")
+        table.add_column("PORT", justify="right", style="cyan", no_wrap=True)
+        table.add_column("STATE", justify="left", style="green")
+        table.add_column("SERVICE", justify="left", style="yellow")
+
+        for port, state in port_results.items():
+            service_name = "unknown"
+            try:
+                service_name = socket.getservbyport(port)
+            except (OSError, socket.error):
+                pass
+            
+            # Color-code the state for better readability
+            if state == 'open':
+                state_color = "bold green"
+            elif state == 'filtered':
+                state_color = "bold yellow"
+            elif state == 'open|filtered':
+                state_color = "bold orange3"
+            else:
+                state_color = "default"
+
+            table.add_row(str(port), f"[{state_color}]{state}[/{state_color}]", service_name)
+        
+        console.print(table)
     else:
         console.print(Panel(
-            Text.from_markup(
-                f"[bold red]Scan Complete: No open ports found on {args.host} in the specified range.[/bold red]"
-            ),
+            Text(f"Scan Complete: No open ports found on {args.host}.", justify="center", style="bold red"),
             border_style="red"
         ))
+    
+    console.print(f"[bold green]Scan finished in[/bold green] [cyan]{duration:.2f}[/cyan] [bold green]seconds.[/bold green]")
 
-    # Save results if an output file is specified
     if args.output_file:
-        save_results(args.host, open_ports, args.output_file, args.format)
+        save_results(args.host, port_results, args.output_file, args.format)
 
 if __name__ == '__main__':
     main()
