@@ -2,6 +2,7 @@ import os
 from setuptools import setup, find_packages
 
 # Read the version from the __init__.py file
+version = "0.1.0"
 with open(os.path.join('marscan', '__init__.py')) as f:
     for line in f:
         if line.startswith('__version__'):
@@ -30,8 +31,9 @@ setup(
     author='Marwan ALkhatib',
     author_email='marwanalkhatibeh@gmail.com', 
     description='A blazing-fast, lightweight Python port scanner for ethical hackers and red teamers.',
-    long_description=open('README.md').read(),
+    long_description=open('README.md', encoding='utf-8').read(),
     long_description_content_type='text/markdown',
+    license='MIT',
     url='https://github.com/MarwanKhatib/MarScan',
     keywords=['port-scanner', 'security', 'network', 'pentesting', 'hacking'],
     classifiers=[
